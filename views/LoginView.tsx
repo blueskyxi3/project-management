@@ -81,8 +81,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                 <span className="absolute right-3 top-2.5 material-symbols-outlined text-slate-700 text-lg">lock</span>
               </div>
             </div>
-            <button className="w-full h-11 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 text-slate-400 hover:text-white font-semibold text-xs rounded-md transition-all uppercase tracking-tighter" type="submit">
-              Initialize Manual Session
+            <button className="w-full h-11 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-md transition-all uppercase tracking-widest shadow-lg shadow-primary/20" type="submit">
+              LOGIN
             </button>
           </form>
         </div>

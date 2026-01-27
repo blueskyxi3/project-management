@@ -1,17 +1,20 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Project, ProjectStatus } from '../types';
 import { PROJECTS } from '../constants';
+import { UploadDocumentsModal } from '../components/Modals';
 
 interface ProjectListViewProps {
   onSelectProject: (p: Project) => void;
 }
 
 export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProject }) => {
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
   return (
     <div className="space-y-6">
       <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark shadow-sm p-5">
-        <form className="flex flex-col lg:flex-row items-end gap-4">
+        <form className="flex flex-col lg:flex-row items-end gap-4" onSubmit={(e) => e.preventDefault()}>
           <div className="w-full lg:w-1/4">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Project No</label>
             <div className="relative">
@@ -45,7 +48,10 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
             <button className="bg-white dark:bg-slate-800 border border-border-light dark:border-border-dark px-5 h-10 rounded-lg text-sm font-medium flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px]">restart_alt</span> Reset
             </button>
-            <button className="bg-[#10b981] hover:bg-[#059669] text-white px-6 h-10 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+            <button 
+              onClick={() => setIsUploadModalOpen(true)}
+              className="bg-[#10b981] hover:bg-[#059669] text-white px-6 h-10 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2"
+            >
               <span className="material-symbols-outlined text-[18px]">add</span> Create New Project
             </button>
           </div>
@@ -64,7 +70,6 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
                 <th className="px-5 py-4">Project No</th>
                 <th className="px-5 py-4">Title</th>
                 <th className="px-5 py-4">Creator</th>
-                <th className="px-5 py-4">Files</th>
                 <th className="px-5 py-4">Status</th>
                 <th className="px-5 py-4">Created At</th>
                 <th className="px-5 py-4 text-right">Actions</th>
@@ -83,12 +88,6 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
                     <div className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">{project.description}</div>
                   </td>
                   <td className="px-5 py-4 text-slate-700 dark:text-slate-300 font-medium">{project.creator}</td>
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                      <span className="material-symbols-outlined text-[16px]">attach_file</span>
-                      <span>{project.filesCount}</span>
-                    </div>
-                  </td>
                   <td className="px-5 py-4">
                     <div className={`flex items-center ${project.status === ProjectStatus.COMPLETED ? 'text-green-500' : 'text-primary'}`}>
                       <span className={`material-symbols-outlined text-[20px] ${project.status === ProjectStatus.IN_PROGRESS ? 'animate-spin-slow' : 'font-bold'}`}>
@@ -124,6 +123,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
           </div>
         </div>
       </div>
+
+      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} />
     </div>
   );
 };

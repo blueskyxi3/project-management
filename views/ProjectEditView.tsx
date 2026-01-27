@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Project, ProjectFile, TabType, ProjectStatus } from '../types';
 import { PROJECT_FILES, TRANSACTIONS, MILESTONES } from '../constants';
 import { SpendingChart, AllocationPie } from '../components/Charts';
-import { FundingModal } from '../components/Modals';
+import { FundingModal, UploadDocumentsModal } from '../components/Modals';
 
 interface ProjectEditViewProps {
   project: Project;
@@ -13,40 +13,90 @@ interface ProjectEditViewProps {
 export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBack }) => {
   const [activeTab, setActiveTab] = useState<TabType>('Overview');
   const [isFundingModalOpen, setIsFundingModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  
+  // State for title modification
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [projectTitle, setProjectTitle] = useState(project.title);
 
   const tabs: TabType[] = ['Overview', 'Strategy', 'Technical', 'Timeline', 'Budget'];
 
+  const handleTitleSave = () => {
+    setIsEditingTitle(false);
+    // In a real app, this would trigger an API update
+  };
+
   return (
     <div className="space-y-6 pb-12">
-      <nav className="flex items-center text-sm font-medium text-slate-500">
+      {/* Consistent Breadcrumbs */}
+      <nav className="flex items-center text-sm font-medium text-slate-500 dark:text-slate-400">
         <button onClick={onBack} className="hover:text-primary transition-colors">Projects</button>
-        <span className="mx-2 text-slate-300">/</span>
-        <span className="text-slate-900 dark:text-white font-semibold">{project.projectNo}</span>
-        <span className="mx-2 text-slate-300">/</span>
+        <span className="mx-2 text-slate-300 dark:text-slate-600">/</span>
+        <span className="text-slate-500 dark:text-slate-400">{project.projectNo}</span>
+        <span className="mx-2 text-slate-300 dark:text-slate-600">/</span>
         <span className="text-slate-900 dark:text-white font-semibold">Edit</span>
       </nav>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{project.title}</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-0.5">Manage project details, schedule, and performance.</p>
+      {/* Consistent Header with Editable Title */}
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+        <div className="flex-1 group">
+          <div className="flex items-center gap-3">
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2 w-full max-w-xl">
+                <input 
+                  type="text" 
+                  value={projectTitle}
+                  onChange={(e) => setProjectTitle(e.target.value)}
+                  className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight bg-white dark:bg-slate-800 border-2 border-primary rounded-lg px-2 py-1 w-full focus:ring-0 focus:outline-none"
+                  autoFocus
+                  onBlur={handleTitleSave}
+                  onKeyDown={(e) => e.key === 'Enter' && handleTitleSave()}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+                  {projectTitle}
+                </h1>
+                <button 
+                  onClick={() => setIsEditingTitle(true)}
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">
+            Manage project details, schedule, and performance.
+          </p>
         </div>
+        
         <div className="flex gap-3">
-          <button onClick={onBack} className="px-5 h-10 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-sm">Cancel</button>
-          <button className="px-5 h-10 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-blue-600 shadow-sm flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">save</span> Save Changes
+          <button 
+            onClick={onBack} 
+            className="px-5 h-10 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          >
+            Cancel
+          </button>
+          <button className="px-5 h-10 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-blue-600 transition-colors shadow-sm shadow-blue-500/20 flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">save</span>
+            Save Changes
           </button>
         </div>
       </div>
 
-      <div className="border-b border-border-light dark:border-border-dark overflow-x-auto">
-        <div className="flex gap-8">
+      {/* Consistent Tab Navigation */}
+      <div className="border-b border-border-light dark:border-border-dark">
+        <div className="flex gap-8 overflow-x-auto">
           {tabs.map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`pb-3 border-b-2 text-sm font-medium whitespace-nowrap px-1 transition-all ${
-                activeTab === tab ? 'border-primary text-primary font-bold' : 'border-transparent text-slate-500 hover:text-slate-700'
+              className={`pb-3 border-b-2 text-sm font-medium whitespace-nowrap px-1 transition-colors ${
+                activeTab === tab 
+                  ? 'border-primary text-primary font-semibold' 
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
               {tab}
@@ -55,6 +105,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
         </div>
       </div>
 
+      {/* Tab Contents */}
       {activeTab === 'Overview' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
@@ -91,7 +142,10 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
                 <span className="material-symbols-outlined text-primary text-[20px]">attach_file</span>
                 <h3 className="text-[16px] font-bold">Project Files</h3>
               </div>
-              <button className="px-3.5 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors text-sm font-bold flex items-center gap-2">
+              <button 
+                onClick={() => setIsUploadModalOpen(true)}
+                className="px-3.5 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors text-sm font-bold flex items-center gap-2"
+              >
                 <span className="material-symbols-outlined text-[18px]">add</span> Upload New
               </button>
             </div>
@@ -138,108 +192,178 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
       )}
 
       {activeTab === 'Strategy' && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 space-y-6">
-              <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <span className="material-symbols-outlined text-primary text-[20px]">target</span>
-                  <h3 className="text-[16px] font-bold">Strategic Objectives</h3>
-                </div>
-                <div className="space-y-6">
-                  {[
-                    { title: 'Market Reach Expansion', current: 85, target: 100, color: 'bg-primary' },
-                    { title: 'User Conversion Rate', current: 12.4, target: 15, color: 'bg-emerald-500' },
-                    { title: 'Brand Sentiment Index', current: 4.2, target: 5.0, color: 'bg-amber-400' }
-                  ].map((obj, i) => (
-                    <div key={i} className="space-y-2">
-                      <div className="flex justify-between items-end">
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{obj.title}</span>
-                        <span className="text-xs font-mono text-slate-500">{obj.current} / {obj.target}</span>
-                      </div>
-                      <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full ${obj.color} rounded-full transition-all duration-1000`} 
-                          style={{ width: `${(obj.current / obj.target) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark overflow-hidden">
-                <div className="px-6 py-4 border-b border-border-light dark:border-border-dark flex items-center justify-between">
-                  <h3 className="text-[16px] font-bold">Stakeholder Analysis</h3>
-                  <button className="text-xs font-bold text-primary hover:underline">View Full Map</button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-slate-50/50 text-[10px] uppercase font-bold text-slate-500 border-b">
-                        <th className="px-6 py-3">Group</th>
-                        <th className="px-6 py-3">Impact</th>
-                        <th className="px-6 py-3">Engagement</th>
-                        <th className="px-6 py-3 text-right">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y text-sm">
-                      {[
-                        { group: 'Product Team', impact: 'High', engagement: 'Collaborative', status: 'Aligned' },
-                        { group: 'Marketing Dept.', impact: 'Medium', engagement: 'Consultative', status: 'Pending Review' },
-                        { group: 'IT Infrastructure', impact: 'High', engagement: 'Direct', status: 'Supportive' }
-                      ].map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="px-6 py-4 font-medium">{item.group}</td>
-                          <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.impact === 'High' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{item.impact}</span></td>
-                          <td className="px-6 py-4 text-slate-500">{item.engagement}</td>
-                          <td className="px-6 py-4 text-right">
-                             <span className="flex items-center justify-end gap-1.5 text-xs font-semibold text-slate-700">
-                               <div className={`size-1.5 rounded-full ${item.status === 'Aligned' ? 'bg-emerald-500' : 'bg-amber-400'}`}></div>
-                               {item.status}
-                             </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+        <div className="grid grid-cols-1 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-primary text-[20px]">explore</span>
+                <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Strategic Alignment</h3>
+              </div>
+              <span className="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                <span className="material-symbols-outlined text-[14px]">bolt</span>
+                CONTINUE
+              </span>
             </div>
-
-            <div className="space-y-6">
-              <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
-                <h3 className="text-[16px] font-bold mb-6">SWOT Analysis</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: 'Strengths', color: 'bg-emerald-50 text-emerald-700', icon: 'trending_up', items: ['Market Leader', 'Proprietary Tech'] },
-                    { label: 'Weaknesses', color: 'bg-red-50 text-red-700', icon: 'trending_down', items: ['Limited Support', 'Legacy Code'] },
-                    { label: 'Opportunities', color: 'bg-blue-50 text-blue-700', icon: 'lightbulb', items: ['Global Expansion', 'Mobile Integration'] },
-                    { label: 'Threats', color: 'bg-amber-50 text-amber-700', icon: 'warning', items: ['New Competitors', 'Reg. Changes'] }
-                  ].map((cell, i) => (
-                    <div key={i} className={`p-3 rounded-lg border border-slate-100 dark:border-slate-800 ${cell.color}`}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="material-symbols-outlined text-[16px]">{cell.icon}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider">{cell.label}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-2 block">Strategy Fit</label>
+                  <select className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:border-primary focus:ring-primary">
+                    <option>National Strategy</option>
+                    <option selected>Group Strategy</option>
+                    <option>Subsidiary Direction</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Demand Urgency Analysis</span>
+                      <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 300 words</span>
+                    </div>
+                    <textarea 
+                      className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                      placeholder="Analysis of demand reality, urgency, customer type, and pain points..." 
+                      rows={4}
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-border-light dark:border-border-dark">
+                <h4 className="text-[12px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">AI Directional Signal</h4>
+                <div className="flex flex-col gap-4">
+                  <label className="block">
+                    <select className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:border-primary focus:ring-primary">
+                      <option selected value="CONTINUE">CONTINUE</option>
+                      <option value="NEED_MORE_INFO">NEED_MORE_INFO</option>
+                      <option value="RISK_ALERT">RISK_ALERT</option>
+                    </select>
+                  </label>
+                  <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="size-8 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                        <span className="material-symbols-outlined text-[20px]">check_circle</span>
                       </div>
-                      <div className="space-y-1">
-                        {cell.items.map((it, j) => <div key={j} className="text-[11px] font-medium leading-tight opacity-80">• {it}</div>)}
+                      <div>
+                        <div className="text-[13px] font-bold text-emerald-700 dark:text-emerald-400">Proceed Confidently</div>
+                        <div className="text-[11px] text-emerald-600/70 dark:text-emerald-400/60">Strategy alignment is above 90%</div>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed italic">
+                    The AI analysis suggests high alignment with current Group Q4 priorities regarding digital infrastructure.
+                  </p>
                 </div>
-              </section>
-              <section className="bg-primary p-6 rounded-xl text-white shadow-lg overflow-hidden relative">
-                <div className="absolute -right-4 -bottom-4 size-32 bg-white/10 rounded-full blur-2xl"></div>
-                <h4 className="text-sm font-bold uppercase tracking-wider mb-2 opacity-80">Strategic Alignment Score</h4>
-                <div className="text-4xl font-extrabold mb-1">94.2%</div>
-                <p className="text-[11px] opacity-90 leading-relaxed font-medium">This project is highly aligned with the corporate Q3-Q4 Digital Transformation Roadmap.</p>
-              </section>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="material-symbols-outlined text-primary text-[20px]">architecture</span>
+              <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Project Definition</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div>
+                <label className="block">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Bottleneck Identification</span>
+                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 300 words</span>
+                  </div>
+                  <textarea 
+                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                    placeholder="Analysis of technical, industry, or value chain bottlenecks with evidence..." 
+                    rows={5}
+                  />
+                </label>
+              </div>
+              <div>
+                <label className="block">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Product & Edge</span>
+                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 500 words</span>
+                  </div>
+                  <textarea 
+                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                    placeholder="Product solution, competitive advantage, and 1-2 year forecast..." 
+                    rows={5}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="border-t border-border-light dark:border-border-dark pt-6">
+              <label className="block">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">TRL Evidence</span>
+                  <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
+                </div>
+                <textarea 
+                  className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                  placeholder="Supporting evidence for TRL levels..." 
+                  rows={3}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="material-symbols-outlined text-primary text-[20px]">inventory_2</span>
+              <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Execution & Readiness</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Capabilities & Resources</span>
+                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
+                  </div>
+                  <textarea 
+                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                    placeholder="Team capabilities, platform resources, industry partners..." 
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Supporting Materials</span>
+                  </div>
+                  <textarea 
+                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                    placeholder="Detailed supporting information..." 
+                    rows={9}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <label className="block flex-1 flex flex-col">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Info Completeness Note</span>
+                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
+                  </div>
+                  <textarea 
+                    className="w-full flex-1 rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
+                    placeholder="Describe info coverage (Conceptual/Preliminary/Complete) and missing parts..." 
+                    rows={8}
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <div className="flex justify-end gap-6 text-[11px] font-medium text-slate-400 uppercase tracking-wider mt-2">
+            <div className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+              Created: Oct 12, 2023 09:45 AM
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">history</span>
+              Updated: 2 hours ago
             </div>
           </div>
         </div>
       )}
 
+      {/* Technical Tab Content */}
       {activeTab === 'Technical' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -340,6 +464,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
         </div>
       )}
 
+      {/* Budget Tab Content */}
       {activeTab === 'Budget' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex justify-end gap-3">
@@ -430,6 +555,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
         </div>
       )}
 
+      {/* Timeline Tab Content */}
       {activeTab === 'Timeline' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 shadow-sm">
@@ -524,6 +650,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
       )}
 
       <FundingModal isOpen={isFundingModalOpen} onClose={() => setIsFundingModalOpen(false)} />
+      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} />
     </div>
   );
 };

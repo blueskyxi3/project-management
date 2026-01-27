@@ -21,7 +21,11 @@ const App: React.FC = () => {
   }
 
   return (
-    <Layout user={user} currentView={selectedProject ? 'edit' : 'projects'}>
+    <Layout 
+      user={user} 
+      currentView={selectedProject ? 'edit' : 'projects'}
+      onNavigateProjects={() => setSelectedProject(null)}
+    >
       {selectedProject ? (
         <ProjectEditView 
           project={selectedProject} 
