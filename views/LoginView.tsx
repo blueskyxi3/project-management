@@ -1,20 +1,76 @@
 
-import React from 'react';
+import React, { useState } from 'react';
+import { supabase } from '../supabase/client';
 
 interface LoginViewProps {
   onLogin: () => void;
+  onShowRegister: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onShowRegister }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!email.trim() || !password) {
+      setError('Please enter email and password');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      if (data.user) {
+        onLogin();
+      }
+    } catch (err) {
+      setError('Login failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSSOLogin = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+
+      if (error) {
+        setError(error.message);
+      }
+    } catch (err) {
+      setError('SSO login failed. Please try again.');
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-dark-base text-slate-300 font-display">
       <div className="hidden lg:flex relative w-3/5 h-full overflow-hidden bg-slate-900 border-r border-slate-800/50">
-        <div 
-          className="absolute inset-0 z-0 opacity-60" 
-          style={{ 
-            backgroundImage: "url('https://picsum.photos/1200/800?grayscale')", 
-            backgroundSize: 'cover', 
-            backgroundPosition: 'center' 
+        <div
+          className="absolute inset-0 z-0 opacity-60"
+          style={{
+            backgroundImage: "url('https://picsum.photos/1200/800?grayscale')",
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
           }}
         />
         <div className="absolute inset-0 z-10 workflow-mesh"></div>
@@ -50,24 +106,43 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
           <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Access Node</h2>
           <p className="text-slate-500 font-light">Identify yourself to proceed.</p>
         </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-red-400 text-sm">
+              <span className="material-symbols-outlined text-lg">error</span>
+              {error}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-8">
-          <button 
-            onClick={onLogin}
-            className="w-full group relative flex justify-center items-center gap-3 rounded-lg bg-primary py-4 px-6 text-sm font-bold text-white transition-all hover:bg-primary-bright glow-primary active:scale-[0.98]"
+          <button
+            onClick={handleSSOLogin}
+            className="w-full group relative flex justify-center items-center gap-3 rounded-lg bg-primary py-4 px-6 text-sm font-bold text-white transition-all hover:bg-primary-bright glow-primary active:scale-[0.98] disabled:opacity-50"
+            disabled={isLoading}
           >
             <span className="material-symbols-outlined !text-xl">shield_person</span>
-            LOGIN WITH AUTHELIA (SSO)
+            LOGIN WITH SSO
           </button>
           <div className="flex items-center gap-4 py-2">
             <div className="h-px flex-1 bg-slate-800"></div>
             <span className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">Manual Override</span>
             <div className="h-px flex-1 bg-slate-800"></div>
           </div>
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onLogin(); }}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="group">
               <label className="block text-[10px] font-mono text-slate-500 uppercase mb-1.5 ml-1 transition-colors group-focus-within:text-primary" htmlFor="email">User Identifier</label>
               <div className="relative">
-                <input className="w-full h-11 bg-dark-surface border-slate-800 text-slate-200 text-sm rounded-md focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all placeholder:text-slate-700" id="email" placeholder="admin@workflow.os" type="email" />
+                <input
+                  className="w-full h-11 bg-dark-surface border-slate-800 text-slate-200 text-sm rounded-md focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all placeholder:text-slate-700"
+                  id="email"
+                  placeholder="admin@workflow.os"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isLoading}
+                />
                 <span className="absolute right-3 top-2.5 material-symbols-outlined text-slate-700 text-lg">alternate_email</span>
               </div>
             </div>
@@ -77,14 +152,44 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                 <a className="text-[10px] font-mono text-slate-600 hover:text-primary transition-colors" href="#">Lost Key?</a>
               </div>
               <div className="relative">
-                <input className="w-full h-11 bg-dark-surface border-slate-800 text-slate-200 text-sm rounded-md focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all placeholder:text-slate-700" id="password" placeholder="••••••••" type="password" />
+                <input
+                  className="w-full h-11 bg-dark-surface border-slate-800 text-slate-200 text-sm rounded-md focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all placeholder:text-slate-700"
+                  id="password"
+                  placeholder="••••••"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                />
                 <span className="absolute right-3 top-2.5 material-symbols-outlined text-slate-700 text-lg">lock</span>
               </div>
             </div>
-            <button className="w-full h-11 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-md transition-all uppercase tracking-widest shadow-lg shadow-primary/20" type="submit">
-              LOGIN
+            <button
+              className="w-full h-11 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-md transition-all uppercase tracking-widest shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              type="submit"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined animate-spin">refresh</span>
+                  Signing In...
+                </span>
+              ) : (
+                'LOGIN'
+              )}
             </button>
           </form>
+        </div>
+        <div className="mt-6 text-center">
+          <p className="text-[11px] text-slate-500">
+            Don't have an account?{' '}
+            <button
+              onClick={onShowRegister}
+              className="text-primary hover:text-primary-bright font-semibold transition-colors"
+            >
+              Create Account
+            </button>
+          </p>
         </div>
         <div className="mt-24 pt-8 border-t border-slate-900 flex justify-between items-center">
           <p className="text-[10px] font-mono text-slate-600">© 2024 CORE SYSTEM</p>

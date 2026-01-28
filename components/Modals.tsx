@@ -95,7 +95,87 @@ export const FundingModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
   );
 };
 
+interface UploadedFile {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  type: string;
+}
+
 export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+  const [uploadedFiles, setUploadedFiles] = React.useState<UploadedFile[]>([]);
+  const [isUploading, setIsUploading] = React.useState(false);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newFiles = files.map(file => ({
+      id: `${Date.now()}-${Math.random()}`,
+      file: file,
+      name: file.name,
+      size: file.size,
+      type: file.type
+    }));
+    setUploadedFiles(prev => [...prev, ...newFiles]);
+  };
+
+  const handleRemoveFile = (id: string) => {
+    setUploadedFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const getFileIcon = (type: string): string => {
+    if (type.includes('pdf')) return 'picture_as_pdf';
+    if (type.includes('image')) return 'image';
+    if (type.includes('sheet') || type.includes('excel')) return 'table_view';
+    if (type.includes('word') || type.includes('document')) return 'description';
+    return 'insert_drive_file';
+  };
+
+  const getFileColor = (type: string): string => {
+    if (type.includes('pdf')) return 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400';
+    if (type.includes('image')) return 'bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400';
+    if (type.includes('sheet') || type.includes('excel')) return 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400';
+    if (type.includes('word') || type.includes('document')) return 'bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400';
+    return 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400';
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleConfirmUpload = async () => {
+    if (uploadedFiles.length === 0) return;
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      uploadedFiles.forEach(file => {
+        formData.append('files', file.file);
+      });
+
+      const response = await fetch('http://192.168.206.103:5678/webhook/project-upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        console.log('Files uploaded successfully');
+        setUploadedFiles([]);
+        onClose();
+      } else {
+        console.error('Upload failed');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -111,8 +191,12 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
             <button onClick={onClose} className="px-5 py-2 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
               Cancel
             </button>
-            <button className="px-6 py-2 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-blue-600 transition-all shadow-md">
-              Confirm Upload
+            <button
+              onClick={handleConfirmUpload}
+              disabled={uploadedFiles.length === 0 || isUploading}
+              className="px-6 py-2 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-blue-600 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
+            >
+              {isUploading ? 'Uploading...' : 'Confirm Upload'}
             </button>
           </div>
         </>
@@ -136,7 +220,12 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
         </div>
 
         <div className="relative group cursor-pointer shrink-0">
-          <input className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer" multiple type="file" />
+          <input
+            className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
+            multiple
+            type="file"
+            onChange={handleFileSelect}
+          />
           <div className="flex flex-col items-center justify-center w-full py-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-[#15202b]/30 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-primary/50 transition-all duration-200 text-center">
             <div className="p-3 bg-white dark:bg-[#1e2936] rounded-full shadow-sm mb-3 group-hover:shadow-md transition-shadow">
               <span className="material-symbols-outlined text-primary text-3xl">cloud_upload</span>
@@ -150,72 +239,41 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Files in queue
-            </h4>
-            <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">3 Files selected</span>
-          </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-700/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-            {/* File 1: Progress */}
-            <div className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-              <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/20 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-red-600 dark:text-red-400 text-xl">picture_as_pdf</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between mb-1">
-                  <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">Q3_Progress_Report.pdf</p>
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">60%</span>
-                </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1">
-                  <div className="bg-primary h-1 rounded-full" style={{ width: '60%' }}></div>
-                </div>
-              </div>
-              <button className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors">
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+        {uploadedFiles.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                Files in queue
+              </h4>
+              <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                {uploadedFiles.length} File{uploadedFiles.length !== 1 ? 's' : ''} selected
+              </span>
             </div>
-            {/* File 2: Ready */}
-            <div className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-              <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/20 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-green-600 dark:text-green-400 text-xl">description</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between mb-1">
-                  <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">Budget_Overview_2024.xlsx</p>
-                  <span className="text-[10px] font-bold text-green-600 dark:text-green-400 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[12px]">check_circle</span> Ready
-                  </span>
+            <div className="divide-y divide-slate-100 dark:divide-slate-700/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              {uploadedFiles.map(file => (
+                <div key={file.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${getFileColor(file.type)}`}>
+                    <span className="material-symbols-outlined text-xl">{getFileIcon(file.type)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                      {file.name}
+                    </p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {formatFileSize(file.size)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveFile(file.id)}
+                    className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
                 </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1">
-                  <div className="bg-green-500 h-1 rounded-full" style={{ width: '100%' }}></div>
-                </div>
-              </div>
-              <button className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors">
-                <span className="material-symbols-outlined text-[18px]">delete</span>
-              </button>
-            </div>
-            {/* File 3: Queued */}
-            <div className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400 text-xl">image</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between mb-1">
-                  <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">Site_Photo_001.jpg</p>
-                  <span className="text-[10px] font-bold text-slate-400">Queued</span>
-                </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1">
-                  <div className="bg-slate-300 dark:bg-slate-600 h-1 rounded-full w-0"></div>
-                </div>
-              </div>
-              <button className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors">
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              ))}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </Modal>
   );
