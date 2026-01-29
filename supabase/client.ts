@@ -18,6 +18,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: localStorage,
     flowType: 'pkce', // Use PKCE for better security
   },
+  global: {
+    headers: {
+      Accept: 'application/json',
+    },
+  },
+  db: {
+    schema: 'public',
+  },
 });
 
 // ============================================

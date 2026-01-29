@@ -22,7 +22,7 @@ export async function getSession() {
  */
 export async function getCurrentUserWithProfile() {
   const { data, error } = await getCurrentUser();
-
+  console.log('getCurrentUserWithProfile', data, error);
   if (error || !data?.user) {
     return { user: null, profile: null, error };
   }

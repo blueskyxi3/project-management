@@ -103,7 +103,83 @@ interface UploadedFile {
   type: string;
 }
 
-export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+interface DeleteConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  projectTitle: string;
+  projectNo: string;
+  isDeleting?: boolean;
+}
+
+export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  projectTitle,
+  projectNo,
+  isDeleting = false,
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-[#1e2936] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="px-6 py-6 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mb-4">
+            <span className="material-symbols-outlined text-red-600 dark:text-red-400 text-3xl">warning</span>
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Project?</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            You are about to delete the following project. This action cannot be undone.
+          </p>
+          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 text-left mb-4">
+            <div className="mb-2">
+              <span className="text-xs text-slate-400 uppercase tracking-wider">Project Title</span>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{projectTitle}</p>
+            </div>
+            <div>
+              <span className="text-xs text-slate-400 uppercase tracking-wider">Project No</span>
+              <p className="text-sm font-mono text-slate-600 dark:text-slate-400">{projectNo}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-1 text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/10 rounded-lg py-2 px-3">
+            <span className="material-symbols-outlined text-[16px]">error_outline</span>
+            <span>This action is permanent and cannot be recovered</span>
+          </div>
+        </div>
+        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            disabled={isDeleting}
+            className="px-5 py-2.5 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isDeleting ? (
+              <>
+                <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
+                Deleting...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+                Delete Project
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => void; user?: { name: string; role: string; avatar: string,id: string; } }> = ({ isOpen, onClose, user }) => {
   const [uploadedFiles, setUploadedFiles] = React.useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = React.useState(false);
 
@@ -154,8 +230,16 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
     try {
       const formData = new FormData();
       uploadedFiles.forEach(file => {
-        formData.append('files', file.file);
+        formData.append('data', file.file);
       });
+
+      // 添加用户信息
+      if (user) {
+        formData.append('userId', user.id);
+        formData.append('userName', user.name);
+        formData.append('userRole', user.role);
+        formData.append('userAvatar', user.avatar);
+      }
 
       const response = await fetch('http://192.168.206.103:5678/webhook/project-upload', {
         method: 'POST',

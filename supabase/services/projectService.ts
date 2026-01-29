@@ -169,12 +169,12 @@ export async function updateProjectStatus(
 /**
  * Delete a project
  */
-export async function deleteProject(projectId: string): Promise<void> {
-  // First, get all files for the project
+export async function deleteProject(projectId: string, projectNo: string): Promise<void> {
+  // First, get all files for the project by project_no
   const { data: files } = await supabase
     .from('project_files')
     .select('file_path')
-    .eq('project_id', projectId);
+    .eq('project_no', projectNo);
 
   // Delete all files from storage
   if (files && files.length > 0) {
@@ -285,9 +285,10 @@ export async function updateProjectStrategy(
 // ============================================
 
 /**
- * Get all files for a project
+ * Get all files for a project by project number
  */
 export async function getProjectFiles(projectId: string): Promise<ProjectFile[]> {
+  console.log('Fetching project files for project ID:', projectId);
   const { data, error } = await supabase
     .from('project_files')
     .select(`
@@ -301,17 +302,25 @@ export async function getProjectFiles(projectId: string): Promise<ProjectFile[]>
     throw new Error(`Failed to fetch project files: ${error.message}`);
   }
 
-  return data.map(file => ({
+  return (data || []).map(file => ({
     ...file,
     uploaded_by_name: file.profiles?.full_name,
   }));
 }
 
 /**
+ * Get all files for a project by project number
+ * Alias for getProjectFiles for consistency
+ */
+export async function getProjectFilesByNo(projectNo: string): Promise<ProjectFile[]> {
+  return getProjectFiles(projectNo);
+}
+
+/**
  * Upload a file to a project
  */
 export async function uploadProjectFile(
-  projectId: string,
+  projectNo: string,
   file: File,
   documentCategory: DocumentCategory = 'Other Related Documents'
 ): Promise<ProjectFile> {
@@ -320,10 +329,10 @@ export async function uploadProjectFile(
   // Generate unique file path
   const fileExt = file.name.split('.').pop();
   const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-  const filePath = `${projectId}/${fileName}`;
+  const filePath = `${projectNo}/${fileName}`;
 
   // Upload to storage
-  const { data: uploadData, error: uploadError } = await uploadFile(
+  const { error: uploadError } = await uploadFile(
     STORAGE_BUCKETS.PROJECT_DOCUMENTS,
     filePath,
     file
@@ -340,7 +349,7 @@ export async function uploadProjectFile(
   const { data: fileData, error: insertError } = await supabase
     .from('project_files')
     .insert({
-      project_id: projectId,
+      project_no: projectNo,
       file_name: file.name,
       file_path: filePath,
       file_url: fileUrl,
@@ -366,12 +375,12 @@ export async function uploadProjectFile(
  * Upload multiple files to a project
  */
 export async function uploadProjectFiles(
-  projectId: string,
+  projectNo: string,
   files: File[],
   documentCategory: DocumentCategory = 'Other Related Documents'
 ): Promise<ProjectFile[]> {
   const uploadPromises = files.map(file =>
-    uploadProjectFile(projectId, file, documentCategory)
+    uploadProjectFile(projectNo, file, documentCategory)
   );
 
   return Promise.all(uploadPromises);
@@ -511,18 +520,18 @@ export function subscribeToProject(
  * Subscribe to project files changes
  */
 export function subscribeToProjectFiles(
-  projectId: string,
+  projectNo: string,
   callback: (payload: any) => void
 ) {
   return supabase
-    .channel(`project-files-${projectId}`)
+    .channel(`project-files-${projectNo}`)
     .on(
       'postgres_changes',
       {
         event: '*',
         schema: 'public',
         table: 'project_files',
-        filter: `project_id=eq.${projectId}`,
+        filter: `project_no=eq.${projectNo}`,
       },
       callback
     )
@@ -548,6 +557,11 @@ export function formatFileSize(bytes: number): string {
  * Get file icon based on file type
  */
 export function getFileIcon(fileType: string): { icon: string; color: string } {
+  // Handle undefined or null file type
+  if (!fileType) {
+    return { icon: 'insert_drive_file', color: 'text-gray-600' };
+  }
+
   const type = fileType.toLowerCase();
 
   if (['pdf'].includes(type)) {

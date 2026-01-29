@@ -125,7 +125,7 @@ export type DocumentCategory = 'Project Application' | 'Progress Report' | 'Fina
 
 export interface ProjectFile {
   id: string;
-  project_id: string;
+  project_no: string;
   file_name: string;
   file_path: string;
   file_url: string;
@@ -139,7 +139,7 @@ export interface ProjectFile {
 }
 
 export interface ProjectFileInsert {
-  project_id: string;
+  project_no: string;
   file_name: string;
   file_path: string;
   file_url: string;

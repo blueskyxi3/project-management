@@ -1,15 +1,127 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Project, ProjectStatus } from '../types';
-import { PROJECTS } from '../constants';
-import { UploadDocumentsModal } from '../components/Modals';
+import { UploadDocumentsModal, DeleteConfirmModal } from '../components/Modals';
+import { getProjects } from '../supabase/services/projectService';
+import { supabase } from '../supabase/client';
 
 interface ProjectListViewProps {
   onSelectProject: (p: Project) => void;
+  user?: { name: string; role: string; avatar: string ,id: string };
 }
 
-export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProject }) => {
+export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProject, user }) => {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+
+  // Delete modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Fetch projects from Supabase on component mount
+  useEffect(() => {
+    fetchProjects();
+
+    // Subscribe to real-time changes
+    const channel = supabase
+      .channel('projects-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'project_info',
+        },
+        () => fetchProjects()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      setLoading(true);
+      const { projects: data, total: totalCount } = await getProjects();
+      setProjects(mapToProject(data));
+      setTotal(totalCount);
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Map Supabase ProjectWithCreator to UI Project type
+  const mapToProject = (data: any[]): Project[] => {
+    return data.map(item => ({
+      id: item.id,
+      projectNo: item.project_no,
+      title: item.project_title,
+      description: item.project_summary,
+      creator: item.creator_name || 'Unknown',
+      filesCount: item.files_count || 0,
+      status: item.status as ProjectStatus,
+      createdAt: formatDate(item.created_at),
+    }));
+  };
+
+  // Format date for display
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // 格式化时间部分
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} ${hours}:${minutes}`;
+  };
+
+  // Handle delete project - open confirm modal
+  const handleDeleteProject = (project: Project) => {
+    setProjectToDelete(project);
+    setIsDeleteModalOpen(true);
+  };
+
+  // Confirm delete project - call n8n webhook
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('http://192.168.206.103:5678/webhook/project-delete', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: projectToDelete.id,
+          projectNo: projectToDelete.projectNo,
+        }),
+      });
+
+      if (response.ok) {
+        setIsDeleteModalOpen(false);
+        setProjectToDelete(null);
+        // Refresh the project list
+        fetchProjects();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(`Failed to delete project: ${errorData.message || response.statusText}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      alert('Failed to delete project. Please check your network connection and try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -61,7 +173,9 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
       <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-border-light dark:border-border-dark flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
           <h3 className="font-semibold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-tight">Project Management List</h3>
-          <span className="text-xs text-slate-500 font-medium">Showing 1-{PROJECTS.length} of 48</span>
+          <span className="text-xs text-slate-500 font-medium">
+            {loading ? 'Loading...' : `Showing ${projects.length} of ${total}`}
+          </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -76,11 +190,23 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
               </tr>
             </thead>
             <tbody className="divide-y divide-border-light dark:divide-border-dark text-sm">
-              {PROJECTS.map((project) => (
-                <tr 
-                  key={project.id} 
-                  className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
-                  onClick={() => onSelectProject(project)}
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-slate-500">
+                    Loading projects...
+                  </td>
+                </tr>
+              ) : projects.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-slate-500">
+                    No projects found
+                  </td>
+                </tr>
+              ) : (
+                projects.map((project) => (
+                <tr
+                  key={project.id}
+                  className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
                 >
                   <td className="px-5 py-4 font-mono text-slate-600 dark:text-slate-400">{project.projectNo}</td>
                   <td className="px-5 py-4">
@@ -89,21 +215,46 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
                   </td>
                   <td className="px-5 py-4 text-slate-700 dark:text-slate-300 font-medium">{project.creator}</td>
                   <td className="px-5 py-4">
-                    <div className={`flex items-center ${project.status === ProjectStatus.COMPLETED ? 'text-green-500' : 'text-primary'}`}>
-                      <span className={`material-symbols-outlined text-[20px] ${project.status === ProjectStatus.IN_PROGRESS ? 'animate-spin-slow' : 'font-bold'}`}>
-                        {project.status === ProjectStatus.COMPLETED ? 'check_circle' : 'sync'}
-                      </span>
-                    </div>
+                    {project.status === ProjectStatus.COMPLETED ? (
+                      <div className="flex items-center text-green-500">
+                        <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                      </div>
+                    ) : project.status === ProjectStatus.IN_PROGRESS ? (
+                      <div className="flex items-center text-primary">
+                        <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                      </div>
+                    ) : project.status === ProjectStatus.UPCOMING ? (
+                      <div className="flex items-center text-blue-500">
+                        <span className="material-symbols-outlined text-[20px]">event</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center text-orange-500">
+                        <span className="material-symbols-outlined text-[20px]">schedule</span>
+                      </div>
+                    )}
                   </td>
                   <td className="px-5 py-4 text-slate-500">{project.createdAt}</td>
                   <td className="px-5 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button className="p-1.5 text-slate-400 hover:text-primary transition-colors"><span className="material-symbols-outlined text-[18px]">edit</span></button>
-                      <button className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                      <button
+                        onClick={() => onSelectProject(project)}
+                        className="p-1.5 text-slate-400 hover:text-primary transition-colors"
+                        title="Edit"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProject(project)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                        title="Delete"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -124,7 +275,19 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
         </div>
       </div>
 
-      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} />
+      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} user={user} />
+
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setProjectToDelete(null);
+        }}
+        onConfirm={confirmDeleteProject}
+        projectTitle={projectToDelete?.title || ''}
+        projectNo={projectToDelete?.projectNo || ''}
+        isDeleting={isDeleting}
+      />
     </div>
   );
 };

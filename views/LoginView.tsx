@@ -22,6 +22,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onShowRegister })
       return;
     }
 
+    console.log('[LoginView] Attempting login for:', email);
     setIsLoading(true);
 
     try {
@@ -30,15 +31,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onShowRegister })
         password
       });
 
+      console.log('[LoginView] signInWithPassword result:', { data, signInError });
+
       if (signInError) {
+        console.error('[LoginView] Sign in error:', signInError);
         setError(signInError.message);
         return;
       }
 
+      console.log('[LoginView] Login successful, user:', data.user, 'session:', data.session);
       if (data.user) {
         onLogin();
       }
     } catch (err) {
+      console.error('[LoginView] Login exception:', err);
       setError('Login failed. Please try again.');
     } finally {
       setIsLoading(false);

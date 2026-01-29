@@ -1,29 +1,109 @@
 
-import React, { useState } from 'react';
-import { Project, ProjectFile, TabType, ProjectStatus } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Project, TabType, ProjectStatus } from '../types';
 import { PROJECT_FILES, TRANSACTIONS, MILESTONES } from '../constants';
 import { SpendingChart, AllocationPie } from '../components/Charts';
 import { FundingModal, UploadDocumentsModal } from '../components/Modals';
+import { getProjectFiles, formatFileSize, getFileIcon, getProjectDirectInfo, updateProjectStrategy } from '../supabase/services/projectService';
+import type { ProjectDirectInfo, StrategyFit, AIDirectionalSignal } from '../supabase/types';
 
 interface ProjectEditViewProps {
   project: Project;
   onBack: () => void;
+  user?: { name: string; role: string; avatar: string,id: string };
 }
 
-export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBack }) => {
+export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBack, user }) => {
   const [activeTab, setActiveTab] = useState<TabType>('Overview');
   const [isFundingModalOpen, setIsFundingModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  
+
   // State for title modification
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [projectTitle, setProjectTitle] = useState(project.title);
+
+  // State for project files from Supabase
+  const [projectFiles, setProjectFiles] = useState<any[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+
+  // State for strategy data from project_direct_info
+  const [strategyData, setStrategyData] = useState<Partial<ProjectDirectInfo>>({});
+  const [isLoadingStrategy, setIsLoadingStrategy] = useState(false);
+  const [isSavingStrategy, setIsSavingStrategy] = useState(false);
+
+
+  useEffect(() => {
+    const fetchFiles = async () => {
+      setIsLoadingFiles(true);
+      try {
+        // 使用项目ID获取文件
+        const files = await getProjectFiles(project.id);
+        setProjectFiles(files);
+      } catch (error) {
+        console.error('Failed to fetch project files:', error);
+        setProjectFiles(PROJECT_FILES);
+      } finally {
+        setIsLoadingFiles(false);
+      }
+    };
+
+    fetchFiles();
+  }, [project.id]);
+
+  // Fetch strategy data from project_direct_info
+  useEffect(() => {
+    const fetchStrategyData = async () => {
+      setIsLoadingStrategy(true);
+      try {
+        const data = await getProjectDirectInfo(project.id);
+        if (data) {
+          setStrategyData(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch strategy data:', error);
+      } finally {
+        setIsLoadingStrategy(false);
+      }
+    };
+
+    if (activeTab === 'Strategy') {
+      fetchStrategyData();
+    }
+  }, [project.id, activeTab]);
 
   const tabs: TabType[] = ['Overview', 'Strategy', 'Technical', 'Timeline', 'Budget'];
 
   const handleTitleSave = () => {
     setIsEditingTitle(false);
     // In a real app, this would trigger an API update
+  };
+
+  // Handle strategy field changes
+  const handleStrategyChange = (field: keyof ProjectDirectInfo, value: string) => {
+    setStrategyData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Save strategy data
+  const handleSaveStrategy = async () => {
+    setIsSavingStrategy(true);
+    try {
+      await updateProjectStrategy(project.id, {
+        strategy_fit: (strategyData.strategy_fit || 'Group Strategy') as StrategyFit,
+        demand_urgency: strategyData.demand_urgency || '',
+        bottleneck: strategyData.bottleneck || '',
+        product_and_edge: strategyData.product_and_edge || '',
+        trl: strategyData.trl || '',
+        resources: strategyData.resources || '',
+        supporting_materials_present: strategyData.supporting_materials_present || '',
+        information_completeness_note: strategyData.information_completeness_note || '',
+      });
+      alert('Strategy data saved successfully!');
+    } catch (error) {
+      console.error('Failed to save strategy data:', error);
+      alert('Failed to save strategy data. Please try again.');
+    } finally {
+      setIsSavingStrategy(false);
+    }
   };
 
   return (
@@ -162,28 +242,45 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light dark:divide-border-dark">
-                  {PROJECT_FILES.map(file => (
-                    <tr key={file.id} className="group hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`size-8 rounded bg-slate-100 flex items-center justify-center shrink-0 ${file.color}`}>
-                            <span className="material-symbols-outlined text-[18px]">{file.icon}</span>
-                          </div>
-                          <span className="text-sm font-medium">{file.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-semibold">{file.type}</span></td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{file.uploadedBy}</td>
-                      <td className="px-6 py-4 text-sm text-slate-500">{file.modified}</td>
-                      <td className="px-6 py-4 text-sm text-slate-500">{file.size}</td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex items-center justify-center gap-3">
-                          <button className="text-slate-400 hover:text-primary transition-colors"><span className="material-symbols-outlined text-[20px]">download</span></button>
-                          <button className="text-slate-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-[20px]">delete</span></button>
-                        </div>
+                  {isLoadingFiles ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                        Loading files...
                       </td>
                     </tr>
-                  ))}
+                  ) : projectFiles.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                        No files uploaded yet
+                      </td>
+                    </tr>
+                  ) : (
+                    projectFiles.map(file => {
+                      const { icon, color } = getFileIcon(file.file_type);
+                      return (
+                        <tr key={file.id} className="group hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className={`size-8 rounded bg-slate-100 flex items-center justify-center shrink-0 ${color}`}>
+                                <span className="material-symbols-outlined text-[18px]">{icon}</span>
+                              </div>
+                              <span className="text-sm font-medium">{file.file_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-semibold">{file.document_category}</span></td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{file.uploaded_by_name || 'Unknown'}</td>
+                          <td className="px-6 py-4 text-sm text-slate-500">{new Date(file.created_at).toLocaleDateString()}</td>
+                          <td className="px-6 py-4 text-sm text-slate-500">{formatFileSize(file.file_size)}</td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="flex items-center justify-center gap-3">
+                              <button className="text-slate-400 hover:text-primary transition-colors"><span className="material-symbols-outlined text-[20px]">download</span></button>
+                              <button className="text-slate-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-[20px]">delete</span></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -193,173 +290,263 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
 
       {activeTab === 'Strategy' && (
         <div className="grid grid-cols-1 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-primary text-[20px]">explore</span>
-                <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Strategic Alignment</h3>
-              </div>
-              <span className="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
-                <span className="material-symbols-outlined text-[14px]">bolt</span>
-                CONTINUE
-              </span>
+          {isLoadingStrategy ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="material-symbols-outlined animate-spin text-primary text-2xl">refresh</span>
+              <span className="ml-2 text-slate-500">Loading strategy data...</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-2 block">Strategy Fit</label>
-                  <select className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:border-primary focus:ring-primary">
-                    <option>National Strategy</option>
-                    <option selected>Group Strategy</option>
-                    <option>Subsidiary Direction</option>
-                  </select>
+          ) : (
+            <>
+              <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-primary text-[20px]">explore</span>
+                    <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Strategic Alignment</h3>
+                  </div>
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full border ${
+                    strategyData.ai_directional_signal === 'CONTINUE'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                      : strategyData.ai_directional_signal === 'RISK_ALERT'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                  }`}>
+                    <span className="material-symbols-outlined text-[14px]">bolt</span>
+                    {strategyData.ai_directional_signal || 'CONTINUE'}
+                  </span>
                 </div>
-                <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-2 block">Strategy Fit</label>
+                      <select
+                        value={strategyData.strategy_fit || 'Group Strategy'}
+                        onChange={(e) => handleStrategyChange('strategy_fit', e.target.value)}
+                        className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:border-primary focus:ring-primary"
+                      >
+                        <option value="National Strategy">National Strategy</option>
+                        <option value="Group Strategy">Group Strategy</option>
+                        <option value="Subsidiary Direction">Subsidiary Direction</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Demand Urgency Analysis</span>
+                          <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 300 words</span>
+                        </div>
+                        <textarea
+                          value={strategyData.demand_urgency || ''}
+                          onChange={(e) => handleStrategyChange('demand_urgency', e.target.value)}
+                          className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                          placeholder="Analysis of demand reality, urgency, customer type, and pain points..."
+                          rows={4}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-border-light dark:border-border-dark">
+                    <h4 className="text-[12px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">AI Directional Signal</h4>
+                    <div className="flex flex-col gap-4">
+                      <label className="block">
+                        <select
+                          value={strategyData.ai_directional_signal || 'CONTINUE'}
+                          onChange={(e) => handleStrategyChange('ai_directional_signal', e.target.value)}
+                          className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:border-primary focus:ring-primary"
+                        >
+                          <option value="CONTINUE">CONTINUE</option>
+                          <option value="NEED_MORE_INFO">NEED_MORE_INFO</option>
+                          <option value="RISK_ALERT">RISK_ALERT</option>
+                        </select>
+                      </label>
+                      <div className={`p-3 rounded-lg border ${
+                        strategyData.ai_directional_signal === 'CONTINUE'
+                          ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50'
+                          : strategyData.ai_directional_signal === 'RISK_ALERT'
+                          ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800/50'
+                          : 'bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-800/50'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`size-8 rounded-full flex items-center justify-center ${
+                            strategyData.ai_directional_signal === 'CONTINUE'
+                              ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400'
+                              : strategyData.ai_directional_signal === 'RISK_ALERT'
+                              ? 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400'
+                              : 'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400'
+                          }`}>
+                            <span className="material-symbols-outlined text-[20px]">
+                              {strategyData.ai_directional_signal === 'CONTINUE' ? 'check_circle' :
+                               strategyData.ai_directional_signal === 'RISK_ALERT' ? 'warning' : 'help'}
+                            </span>
+                          </div>
+                          <div>
+                            <div className={`text-[13px] font-bold ${
+                              strategyData.ai_directional_signal === 'CONTINUE'
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : strategyData.ai_directional_signal === 'RISK_ALERT'
+                                ? 'text-red-700 dark:text-red-400'
+                                : 'text-amber-700 dark:text-amber-400'
+                            }`}>
+                              {strategyData.ai_directional_signal === 'CONTINUE' ? 'Proceed Confidently' :
+                               strategyData.ai_directional_signal === 'RISK_ALERT' ? 'Risk Alert' : 'Need More Info'}
+                            </div>
+                            <div className={`text-[11px] ${
+                              strategyData.ai_directional_signal === 'CONTINUE'
+                                ? 'text-emerald-600/70 dark:text-emerald-400/60'
+                                : strategyData.ai_directional_signal === 'RISK_ALERT'
+                                ? 'text-red-600/70 dark:text-red-400/60'
+                                : 'text-amber-600/70 dark:text-amber-400/60'
+                            }`}>
+                              {strategyData.ai_directional_signal === 'CONTINUE' ? 'Strategy alignment is above 90%' :
+                               strategyData.ai_directional_signal === 'RISK_ALERT' ? 'Potential risks detected' : 'Additional information required'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed italic">
+                        The AI analysis suggests {strategyData.ai_directional_signal === 'CONTINUE' ? 'high alignment with current priorities' :
+                          strategyData.ai_directional_signal === 'RISK_ALERT' ? 'potential risks that need attention' : 'more information is needed for proper evaluation'}.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="material-symbols-outlined text-primary text-[20px]">architecture</span>
+                  <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Project Definition</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  <div>
+                    <label className="block">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Bottleneck Identification</span>
+                        <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 300 words</span>
+                      </div>
+                      <textarea
+                        value={strategyData.bottleneck || ''}
+                        onChange={(e) => handleStrategyChange('bottleneck', e.target.value)}
+                        className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                        placeholder="Analysis of technical, industry, or value chain bottlenecks with evidence..."
+                        rows={5}
+                      />
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Product & Edge</span>
+                        <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 500 words</span>
+                      </div>
+                      <textarea
+                        value={strategyData.product_and_edge || ''}
+                        onChange={(e) => handleStrategyChange('product_and_edge', e.target.value)}
+                        className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                        placeholder="Product solution, competitive advantage, and 1-2 year forecast..."
+                        rows={5}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="border-t border-border-light dark:border-border-dark pt-6">
                   <label className="block">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Demand Urgency Analysis</span>
-                      <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 300 words</span>
+                      <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">TRL Evidence</span>
+                      <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
                     </div>
-                    <textarea 
-                      className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                      placeholder="Analysis of demand reality, urgency, customer type, and pain points..." 
-                      rows={4}
+                    <textarea
+                      value={strategyData.trl || ''}
+                      onChange={(e) => handleStrategyChange('trl', e.target.value)}
+                      className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                      placeholder="Supporting evidence for TRL levels..."
+                      rows={3}
                     />
                   </label>
                 </div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-border-light dark:border-border-dark">
-                <h4 className="text-[12px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">AI Directional Signal</h4>
-                <div className="flex flex-col gap-4">
-                  <label className="block">
-                    <select className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:border-primary focus:ring-primary">
-                      <option selected value="CONTINUE">CONTINUE</option>
-                      <option value="NEED_MORE_INFO">NEED_MORE_INFO</option>
-                      <option value="RISK_ALERT">RISK_ALERT</option>
-                    </select>
-                  </label>
-                  <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/50">
-                    <div className="flex items-center gap-3">
-                      <div className="size-8 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                        <span className="material-symbols-outlined text-[20px]">check_circle</span>
+              </section>
+
+              <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="material-symbols-outlined text-primary text-[20px]">inventory_2</span>
+                  <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Execution & Readiness</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Capabilities & Resources</span>
+                        <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
                       </div>
-                      <div>
-                        <div className="text-[13px] font-bold text-emerald-700 dark:text-emerald-400">Proceed Confidently</div>
-                        <div className="text-[11px] text-emerald-600/70 dark:text-emerald-400/60">Strategy alignment is above 90%</div>
+                      <textarea
+                        value={strategyData.resources || ''}
+                        onChange={(e) => handleStrategyChange('resources', e.target.value)}
+                        className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                        placeholder="Team capabilities, platform resources, industry partners..."
+                        rows={3}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Supporting Materials</span>
                       </div>
+                      <textarea
+                        value={strategyData.supporting_materials_present || ''}
+                        onChange={(e) => handleStrategyChange('supporting_materials_present', e.target.value)}
+                        className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                        placeholder="Detailed supporting information..."
+                        rows={9}
+                      />
                     </div>
                   </div>
-                  <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed italic">
-                    The AI analysis suggests high alignment with current Group Q4 priorities regarding digital infrastructure.
-                  </p>
+                  <div className="flex flex-col">
+                    <label className="block flex-1 flex flex-col">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Info Completeness Note</span>
+                        <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
+                      </div>
+                      <textarea
+                        value={strategyData.information_completeness_note || ''}
+                        onChange={(e) => handleStrategyChange('information_completeness_note', e.target.value)}
+                        className="w-full flex-1 rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400"
+                        placeholder="Describe info coverage (Conceptual/Preliminary/Complete) and missing parts..."
+                        rows={8}
+                      />
+                    </label>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </section>
+              </section>
 
-          <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="material-symbols-outlined text-primary text-[20px]">architecture</span>
-              <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Project Definition</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              <div>
-                <label className="block">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Bottleneck Identification</span>
-                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 300 words</span>
+              <div className="flex justify-between items-center">
+                <div className="flex gap-6 text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+                    Created: {strategyData.created_at ? new Date(strategyData.created_at).toLocaleDateString() : 'N/A'}
                   </div>
-                  <textarea 
-                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                    placeholder="Analysis of technical, industry, or value chain bottlenecks with evidence..." 
-                    rows={5}
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Product & Edge</span>
-                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 500 words</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[14px]">history</span>
+                    Updated: {strategyData.updated_at ? new Date(strategyData.updated_at).toLocaleDateString() : 'N/A'}
                   </div>
-                  <textarea 
-                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                    placeholder="Product solution, competitive advantage, and 1-2 year forecast..." 
-                    rows={5}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="border-t border-border-light dark:border-border-dark pt-6">
-              <label className="block">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">TRL Evidence</span>
-                  <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
                 </div>
-                <textarea 
-                  className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                  placeholder="Supporting evidence for TRL levels..." 
-                  rows={3}
-                />
-              </label>
-            </div>
-          </section>
-
-          <section className="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="material-symbols-outlined text-primary text-[20px]">inventory_2</span>
-              <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">Execution & Readiness</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Capabilities & Resources</span>
-                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
-                  </div>
-                  <textarea 
-                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                    placeholder="Team capabilities, platform resources, industry partners..." 
-                    rows={3}
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Supporting Materials</span>
-                  </div>
-                  <textarea 
-                    className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                    placeholder="Detailed supporting information..." 
-                    rows={9}
-                  />
-                </div>
+                <button
+                  onClick={handleSaveStrategy}
+                  disabled={isSavingStrategy}
+                  className="px-5 h-10 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-blue-600 transition-colors shadow-sm shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingStrategy ? (
+                    <>
+                      <span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">save</span>
+                      Save Strategy
+                    </>
+                  )}
+                </button>
               </div>
-              <div className="flex flex-col">
-                <label className="block flex-1 flex flex-col">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Info Completeness Note</span>
-                    <span className="text-[11px] text-slate-400 uppercase font-semibold">Max 200 words</span>
-                  </div>
-                  <textarea 
-                    className="w-full flex-1 rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 focus:border-primary focus:ring-primary placeholder:text-slate-400" 
-                    placeholder="Describe info coverage (Conceptual/Preliminary/Complete) and missing parts..." 
-                    rows={8}
-                  />
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <div className="flex justify-end gap-6 text-[11px] font-medium text-slate-400 uppercase tracking-wider mt-2">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-              Created: Oct 12, 2023 09:45 AM
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">history</span>
-              Updated: 2 hours ago
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -650,7 +837,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
       )}
 
       <FundingModal isOpen={isFundingModalOpen} onClose={() => setIsFundingModalOpen(false)} />
-      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} />
+      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} user={user} />
     </div>
   );
 };
