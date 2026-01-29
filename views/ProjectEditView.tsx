@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Project, TabType, ProjectStatus } from '../types';
-import { PROJECT_FILES, TRANSACTIONS, MILESTONES } from '../constants';
+import { TRANSACTIONS, MILESTONES } from '../constants';
 import { SpendingChart, AllocationPie } from '../components/Charts';
 import { FundingModal, UploadDocumentsModal } from '../components/Modals';
-import { getProjectFiles, formatFileSize, getFileIcon, getProjectDirectInfo, updateProjectStrategy } from '../supabase/services/projectService';
+import { supabase } from '../supabase/client';
+import { getProjectFiles, formatFileSize, getFileIcon, getProjectDirectInfo, upsertProjectDirectInfo, updateProjectOverview } from '../supabase/services/projectService';
 import type { ProjectDirectInfo, StrategyFit, AIDirectionalSignal } from '../supabase/types';
 
 interface ProjectEditViewProps {
@@ -17,19 +18,24 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
   const [activeTab, setActiveTab] = useState<TabType>('Overview');
   const [isFundingModalOpen, setIsFundingModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [devToastVisible, setDevToastVisible] = useState(false);
 
   // State for title modification
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [projectTitle, setProjectTitle] = useState(project.title);
+  const [projectSummary, setProjectSummary] = useState(project.description);
 
   // State for project files from Supabase
   const [projectFiles, setProjectFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [uploaderNameById, setUploaderNameById] = useState<Record<string, string>>({});
 
   // State for strategy data from project_direct_info
   const [strategyData, setStrategyData] = useState<Partial<ProjectDirectInfo>>({});
   const [isLoadingStrategy, setIsLoadingStrategy] = useState(false);
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
+  const [isSavingOverview, setIsSavingOverview] = useState(false);
+  const [saveToast, setSaveToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
 
   useEffect(() => {
@@ -41,7 +47,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
         setProjectFiles(files);
       } catch (error) {
         console.error('Failed to fetch project files:', error);
-        setProjectFiles(PROJECT_FILES);
+        setProjectFiles([]);
       } finally {
         setIsLoadingFiles(false);
       }
@@ -50,12 +56,63 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
     fetchFiles();
   }, [project.id]);
 
+  useEffect(() => {
+    const fetchUploaderNames = async () => {
+      const idsToFetch = Array.from(
+        new Set(
+          projectFiles
+            .filter((file) => file.uploaded_by && !file.uploaded_by_name)
+            .map((file) => file.uploaded_by as string)
+        )
+      ).filter((id) => !uploaderNameById[id]);
+
+      if (idsToFetch.length === 0) return;
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', idsToFetch);
+
+      if (error) {
+        console.warn('Failed to fetch uploader profiles:', error.message);
+        return;
+      }
+
+      const nextMap: Record<string, string> = {};
+      (data || []).forEach((profile) => {
+        nextMap[profile.id] = profile.full_name || profile.email;
+      });
+
+      if (Object.keys(nextMap).length > 0) {
+        setUploaderNameById((prev) => ({ ...prev, ...nextMap }));
+      }
+    };
+
+    fetchUploaderNames();
+  }, [projectFiles, uploaderNameById]);
+
+  useEffect(() => {
+    if (!saveToast) return;
+    const timer = window.setTimeout(() => setSaveToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [saveToast]);
+
+  useEffect(() => {
+    if (!devToastVisible) return;
+    const timer = window.setTimeout(() => setDevToastVisible(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [devToastVisible]);
+
+  const showUnderDeveloping = () => {
+    setDevToastVisible(true);
+  };
+
   // Fetch strategy data from project_direct_info
   useEffect(() => {
     const fetchStrategyData = async () => {
       setIsLoadingStrategy(true);
       try {
-        const data = await getProjectDirectInfo(project.id);
+        const data = await getProjectDirectInfo(project.id, project.projectNo);
         if (data) {
           setStrategyData(data);
         }
@@ -87,7 +144,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
   const handleSaveStrategy = async () => {
     setIsSavingStrategy(true);
     try {
-      await updateProjectStrategy(project.id, {
+      await upsertProjectDirectInfo(project.id, project.projectNo, {
         strategy_fit: (strategyData.strategy_fit || 'Group Strategy') as StrategyFit,
         demand_urgency: strategyData.demand_urgency || '',
         bottleneck: strategyData.bottleneck || '',
@@ -97,17 +154,88 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
         supporting_materials_present: strategyData.supporting_materials_present || '',
         information_completeness_note: strategyData.information_completeness_note || '',
       });
-      alert('Strategy data saved successfully!');
+      setSaveToast({ type: 'success', message: 'Strategy changes saved successfully.' });
     } catch (error) {
       console.error('Failed to save strategy data:', error);
-      alert('Failed to save strategy data. Please try again.');
+      const message = error instanceof Error ? error.message : 'Failed to save strategy. Please try again.';
+      setSaveToast({ type: 'error', message });
     } finally {
       setIsSavingStrategy(false);
     }
   };
 
+  const handleSaveOverview = async () => {
+    setIsSavingOverview(true);
+    try {
+      await updateProjectOverview(project.id, {
+        project_title: projectTitle,
+        project_summary: projectSummary,
+      });
+      setSaveToast({ type: 'success', message: 'Overview changes saved successfully.' });
+    } catch (error) {
+      console.error('Failed to save overview data:', error);
+      const message = error instanceof Error ? error.message : 'Failed to save overview. Please try again.';
+      setSaveToast({ type: 'error', message });
+    } finally {
+      setIsSavingOverview(false);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    if (activeTab === 'Strategy') {
+      await handleSaveStrategy();
+      return;
+    }
+    if (activeTab === 'Overview') {
+      await handleSaveOverview();
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
+      {saveToast && (
+        <div className="fixed left-1/2 top-12 z-50 -translate-x-1/2">
+          <div
+            className={`min-w-[280px] max-w-[360px] rounded-xl border px-4 py-3 shadow-lg backdrop-blur-sm ${
+              saveToast.type === 'success'
+                ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50/90 border-rose-200 text-rose-800'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span
+                className={`material-symbols-outlined text-[22px] ${
+                  saveToast.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
+                }`}
+              >
+                {saveToast.type === 'success' ? 'check_circle' : 'error'}
+              </span>
+              <div className="flex-1">
+                <div className="text-sm font-semibold">
+                  {saveToast.type === 'success' ? 'Saved' : 'Save Failed'}
+                </div>
+                <div className="text-xs opacity-80 mt-0.5">{saveToast.message}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveToast(null)}
+                className="text-slate-500 hover:text-slate-700 transition-colors"
+                aria-label="Dismiss"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {devToastVisible && (
+        <div className="fixed left-1/2 top-24 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full bg-slate-900 text-white px-5 py-2 shadow-lg">
+            <span className="material-symbols-outlined text-[18px] text-blue-400">construction</span>
+            <span className="text-sm font-semibold">Under developing</span>
+          </div>
+        </div>
+      )}
       {/* Consistent Breadcrumbs */}
       <nav className="flex items-center text-sm font-medium text-slate-500 dark:text-slate-400">
         <button onClick={onBack} className="hover:text-primary transition-colors">Projects</button>
@@ -159,9 +287,27 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
           >
             Cancel
           </button>
-          <button className="px-5 h-10 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-blue-600 transition-colors shadow-sm shadow-blue-500/20 flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">save</span>
-            Save Changes
+          <button
+            onClick={handleSaveChanges}
+            disabled={(activeTab === 'Strategy' && isSavingStrategy) || (activeTab === 'Overview' && isSavingOverview)}
+            className="px-5 h-10 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-blue-600 transition-colors shadow-sm shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {activeTab === 'Strategy' && isSavingStrategy ? (
+              <>
+                <span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>
+                Saving...
+              </>
+            ) : activeTab === 'Overview' && isSavingOverview ? (
+              <>
+                <span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>
+                Saving...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[18px]">save</span>
+                Save Changes
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -210,7 +356,12 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
               </div>
               <label className="block">
                 <span className="text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-2 block">Summary</span>
-                <textarea className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 resize-none" rows={4} defaultValue={project.description}></textarea>
+                <textarea
+                  className="w-full rounded-lg border-border-light dark:border-border-dark bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm p-3 resize-none"
+                  rows={4}
+                  value={projectSummary}
+                  onChange={(e) => setProjectSummary(e.target.value)}
+                ></textarea>
                 <div className="flex justify-end mt-1.5"><span className="text-[11px] text-slate-400 font-medium">184/500 characters</span></div>
               </label>
             </div>
@@ -223,7 +374,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
                 <h3 className="text-[16px] font-bold">Project Files</h3>
               </div>
               <button 
-                onClick={() => setIsUploadModalOpen(true)}
+                onClick={showUnderDeveloping}
                 className="px-3.5 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors text-sm font-bold flex items-center gap-2"
               >
                 <span className="material-symbols-outlined text-[18px]">add</span> Upload New
@@ -257,6 +408,25 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
                   ) : (
                     projectFiles.map(file => {
                       const { icon, color } = getFileIcon(file.file_type);
+                      const uploadedByLabel =
+                        file.uploaded_by_name ||
+                        (file.uploaded_by ? uploaderNameById[file.uploaded_by] : undefined) ||
+                        (user?.id && file.uploaded_by === user.id ? user.name : undefined) ||
+                        project.creator ||
+                        'Unknown';
+                      const rawFileSize = file.file_size;
+                      let sizeLabel = '-';
+                      if (rawFileSize !== null && rawFileSize !== undefined && rawFileSize !== '') {
+                        if (typeof rawFileSize === 'number') {
+                          sizeLabel = formatFileSize(rawFileSize);
+                        } else if (typeof rawFileSize === 'bigint') {
+                          sizeLabel = formatFileSize(Number(rawFileSize));
+                        } else if (typeof rawFileSize === 'string') {
+                          const normalized = rawFileSize.replace(/,/g, '').trim();
+                          const asNumber = Number(normalized);
+                          sizeLabel = Number.isFinite(asNumber) ? formatFileSize(asNumber) : rawFileSize;
+                        }
+                      }
                       return (
                         <tr key={file.id} className="group hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
@@ -268,13 +438,23 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
                             </div>
                           </td>
                           <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-semibold">{file.document_category}</span></td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{file.uploaded_by_name || 'Unknown'}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{uploadedByLabel}</td>
                           <td className="px-6 py-4 text-sm text-slate-500">{new Date(file.created_at).toLocaleDateString()}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{formatFileSize(file.file_size)}</td>
+                          <td className="px-6 py-4 text-sm text-slate-500">{sizeLabel}</td>
                           <td className="px-6 py-4 text-center">
                             <div className="flex items-center justify-center gap-3">
-                              <button className="text-slate-400 hover:text-primary transition-colors"><span className="material-symbols-outlined text-[20px]">download</span></button>
-                              <button className="text-slate-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-[20px]">delete</span></button>
+                              <button
+                                onClick={showUnderDeveloping}
+                                className="text-slate-400 hover:text-primary transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">download</span>
+                              </button>
+                              <button
+                                onClick={showUnderDeveloping}
+                                className="text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -527,23 +707,6 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
                     Updated: {strategyData.updated_at ? new Date(strategyData.updated_at).toLocaleDateString() : 'N/A'}
                   </div>
                 </div>
-                <button
-                  onClick={handleSaveStrategy}
-                  disabled={isSavingStrategy}
-                  className="px-5 h-10 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-blue-600 transition-colors shadow-sm shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSavingStrategy ? (
-                    <>
-                      <span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[18px]">save</span>
-                      Save Strategy
-                    </>
-                  )}
-                </button>
               </div>
             </>
           )}

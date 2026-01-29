@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectStatus } from '../types';
 import { UploadDocumentsModal, DeleteConfirmModal } from '../components/Modals';
-import { getProjects } from '../supabase/services/projectService';
+import { getProjects, deleteProject } from '../supabase/services/projectService';
 import { supabase } from '../supabase/client';
 
 interface ProjectListViewProps {
@@ -15,16 +15,20 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [projectNoQuery, setProjectNoQuery] = useState('');
+  const [keywordQuery, setKeywordQuery] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({ projectNo: '', keyword: '' });
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   // Delete modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteToast, setDeleteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Fetch projects from Supabase on component mount
   useEffect(() => {
-    fetchProjects();
-
     // Subscribe to real-time changes
     const channel = supabase
       .channel('projects-changes')
@@ -44,10 +48,32 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
     };
   }, []);
 
+  useEffect(() => {
+    fetchProjects();
+  }, [page, perPage, appliedFilters]);
+
+  useEffect(() => {
+    if (!deleteToast) return;
+    const timer = window.setTimeout(() => setDeleteToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [deleteToast]);
+
+  const buildSearchParams = (override?: { projectNo?: string; keyword?: string }) => {
+    const projectNo = (override?.projectNo ?? appliedFilters.projectNo).trim();
+    const keyword = (override?.keyword ?? appliedFilters.keyword).trim();
+
+    return {
+      project_no: projectNo || undefined,
+      keyword: keyword || undefined,
+      page,
+      per_page: perPage,
+    };
+  };
+
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const { projects: data, total: totalCount } = await getProjects();
+      const { projects: data, total: totalCount } = await getProjects(buildSearchParams());
       setProjects(mapToProject(data));
       setTotal(totalCount);
     } catch (error) {
@@ -56,6 +82,22 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
       setLoading(false);
     }
   };
+
+  const handleQuery = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    setPage(1);
+    setAppliedFilters({ projectNo: projectNoQuery, keyword: keywordQuery });
+  };
+
+  const handleReset = async () => {
+    setProjectNoQuery('');
+    setKeywordQuery('');
+    setPage(1);
+    setAppliedFilters({ projectNo: '', keyword: '' });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   // Map Supabase ProjectWithCreator to UI Project type
   const mapToProject = (data: any[]): Project[] => {
@@ -95,7 +137,15 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
 
     setIsDeleting(true);
     try {
-      const response = await fetch('http://192.168.206.103:5678/webhook/project-delete', {
+      await deleteProject(projectToDelete.id, projectToDelete.projectNo);
+
+      setIsDeleteModalOpen(false);
+      setProjectToDelete(null);
+      setProjects((prev) => prev.filter((project) => project.id !== projectToDelete.id));
+      fetchProjects();
+      setDeleteToast({ type: 'success', message: 'Project deleted successfully.' });
+
+      fetch('http://192.168.206.103:5678/webhook/project-delete', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -104,20 +154,15 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
           projectId: projectToDelete.id,
           projectNo: projectToDelete.projectNo,
         }),
+      }).catch((error) => {
+        console.warn('Webhook delete failed:', error);
       });
-
-      if (response.ok) {
-        setIsDeleteModalOpen(false);
-        setProjectToDelete(null);
-        // Refresh the project list
-        fetchProjects();
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        alert(`Failed to delete project: ${errorData.message || response.statusText}`);
-      }
     } catch (error) {
       console.error('Failed to delete project:', error);
-      alert('Failed to delete project. Please check your network connection and try again.');
+      const message = error instanceof Error ? error.message : 'Failed to delete project. Please try again.';
+      setIsDeleteModalOpen(false);
+      setProjectToDelete(null);
+      setDeleteToast({ type: 'error', message });
     } finally {
       setIsDeleting(false);
     }
@@ -125,8 +170,43 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
 
   return (
     <div className="space-y-6">
+      {deleteToast && (
+        <div className="fixed left-1/2 top-12 z-50 -translate-x-1/2">
+          <div
+            className={`min-w-[280px] max-w-[360px] rounded-xl border px-4 py-3 shadow-lg backdrop-blur-sm ${
+              deleteToast.type === 'success'
+                ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50/90 border-rose-200 text-rose-800'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span
+                className={`material-symbols-outlined text-[22px] ${
+                  deleteToast.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
+                }`}
+              >
+                {deleteToast.type === 'success' ? 'check_circle' : 'error'}
+              </span>
+              <div className="flex-1">
+                <div className="text-sm font-semibold">
+                  {deleteToast.type === 'success' ? 'Deleted' : 'Delete Failed'}
+                </div>
+                <div className="text-xs opacity-80 mt-0.5">{deleteToast.message}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteToast(null)}
+                className="text-slate-500 hover:text-slate-700 transition-colors"
+                aria-label="Dismiss"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark shadow-sm p-5">
-        <form className="flex flex-col lg:flex-row items-end gap-4" onSubmit={(e) => e.preventDefault()}>
+        <form className="flex flex-col lg:flex-row items-end gap-4" onSubmit={handleQuery}>
           <div className="w-full lg:w-1/4">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Project No</label>
             <div className="relative">
@@ -137,6 +217,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
                 className="pl-9 w-full rounded-lg border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-800 text-sm h-10" 
                 placeholder="e.g. PJ-2023-001" 
                 type="text" 
+                value={projectNoQuery}
+                onChange={(event) => setProjectNoQuery(event.target.value)}
               />
             </div>
           </div>
@@ -150,17 +232,27 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
                 className="pl-9 w-full rounded-lg border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-800 text-sm h-10" 
                 placeholder="Search by title or summary..." 
                 type="text" 
+                value={keywordQuery}
+                onChange={(event) => setKeywordQuery(event.target.value)}
               />
             </div>
           </div>
           <div className="w-full lg:w-auto flex items-center gap-3">
-            <button className="bg-primary hover:bg-primary-dark text-white px-5 h-10 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+            <button
+              type="submit"
+              className="bg-primary hover:bg-primary-dark text-white px-5 h-10 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2"
+            >
               <span className="material-symbols-outlined text-[18px]">search</span> Query
             </button>
-            <button className="bg-white dark:bg-slate-800 border border-border-light dark:border-border-dark px-5 h-10 rounded-lg text-sm font-medium flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="bg-white dark:bg-slate-800 border border-border-light dark:border-border-dark px-5 h-10 rounded-lg text-sm font-medium flex items-center gap-2"
+            >
               <span className="material-symbols-outlined text-[18px]">restart_alt</span> Reset
             </button>
             <button 
+              type="button"
               onClick={() => setIsUploadModalOpen(true)}
               className="bg-[#10b981] hover:bg-[#059669] text-white px-6 h-10 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2"
             >
@@ -261,16 +353,48 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
         <div className="border-t border-border-light dark:border-border-dark px-5 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
           <div className="flex items-center gap-2 text-sm text-slate-500">
             <span>Rows per page:</span>
-            <select className="bg-white dark:bg-slate-800 border-border-light dark:border-border-dark rounded text-sm py-1">
-              <option>10</option>
-              <option>20</option>
+            <select
+              value={perPage}
+              onChange={(event) => {
+                setPerPage(Number(event.target.value));
+                setPage(1);
+              }}
+              className="bg-white dark:bg-slate-800 border-border-light dark:border-border-dark rounded text-sm py-1"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
             </select>
           </div>
           <div className="flex items-center gap-1">
-            <button className="p-1 rounded opacity-50"><span className="material-symbols-outlined">chevron_left</span></button>
-            <button className="size-8 rounded text-sm font-medium bg-primary text-white">1</button>
-            <button className="size-8 rounded text-sm font-medium">2</button>
-            <button className="p-1 rounded"><span className="material-symbols-outlined">chevron_right</span></button>
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              className={`p-1 rounded ${page === 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={page === 1}
+            >
+              <span className="material-symbols-outlined">chevron_left</span>
+            </button>
+            {pageNumbers.map((pageNumber) => (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+                className={`size-8 rounded text-sm font-medium ${
+                  pageNumber === page ? 'bg-primary text-white' : ''
+                }`}
+              >
+                {pageNumber}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              className={`p-1 rounded ${page === totalPages ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={page === totalPages}
+            >
+              <span className="material-symbols-outlined">chevron_right</span>
+            </button>
           </div>
         </div>
       </div>

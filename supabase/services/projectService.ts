@@ -136,10 +136,14 @@ export async function updateProjectOverview(
     .update(updates)
     .eq('id', projectId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw new Error(`Failed to update project: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error('Failed to update project: no rows were updated. Please check permissions.');
   }
 
   return data;
@@ -169,12 +173,16 @@ export async function updateProjectStatus(
 /**
  * Delete a project
  */
-export async function deleteProject(projectId: string, projectNo: string): Promise<void> {
-  // First, get all files for the project by project_no
-  const { data: files } = await supabase
+export async function deleteProject(projectId: string, _projectNo: string): Promise<void> {
+  // First, get all files for the project by project_id
+  const { data: files, error: filesError } = await supabase
     .from('project_files')
     .select('file_path')
-    .eq('project_no', projectNo);
+    .eq('project_id', projectId);
+
+  if (filesError) {
+    throw new Error(`Failed to fetch project files: ${filesError.message}`);
+  }
 
   // Delete all files from storage
   if (files && files.length > 0) {
@@ -183,13 +191,18 @@ export async function deleteProject(projectId: string, projectNo: string): Promi
   }
 
   // Delete the project (cascade will handle related records)
-  const { error } = await supabase
+  const { data: deletedRows, error } = await supabase
     .from('project_info')
     .delete()
-    .eq('id', projectId);
+    .eq('id', projectId)
+    .select('id');
 
   if (error) {
     throw new Error(`Failed to delete project: ${error.message}`);
+  }
+
+  if (!deletedRows || deletedRows.length === 0) {
+    throw new Error('Delete failed: no rows were removed. Please check permissions.');
   }
 }
 
@@ -200,7 +213,10 @@ export async function deleteProject(projectId: string, projectNo: string): Promi
 /**
  * Get project direct info by project ID
  */
-export async function getProjectDirectInfo(projectId: string): Promise<ProjectDirectInfo | null> {
+export async function getProjectDirectInfo(
+  projectId: string,
+  projectNo?: string
+): Promise<ProjectDirectInfo | null> {
   const { data, error } = await supabase
     .from('project_direct_info')
     .select('*')
@@ -211,7 +227,21 @@ export async function getProjectDirectInfo(projectId: string): Promise<ProjectDi
     throw new Error(`Failed to fetch project direct info: ${error.message}`);
   }
 
-  return data;
+  if (data || !projectNo) {
+    return data;
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabase
+    .from('project_direct_info')
+    .select('*')
+    .eq('project_no', projectNo)
+    .maybeSingle();
+
+  if (fallbackError) {
+    throw new Error(`Failed to fetch project direct info by project_no: ${fallbackError.message}`);
+  }
+
+  return fallbackData;
 }
 
 /**
@@ -222,41 +252,24 @@ export async function upsertProjectDirectInfo(
   projectNo: string,
   info: Partial<ProjectDirectInfoInsert>
 ): Promise<ProjectDirectInfo> {
-  // Check if direct info exists
-  const existing = await getProjectDirectInfo(projectId);
-
-  if (existing) {
-    // Update existing
-    const { data, error } = await supabase
-      .from('project_direct_info')
-      .update(info)
-      .eq('project_id', projectId)
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(`Failed to update project direct info: ${error.message}`);
-    }
-
-    return data;
-  } else {
-    // Create new
-    const { data, error } = await supabase
-      .from('project_direct_info')
-      .insert({
+  const { data, error } = await supabase
+    .from('project_direct_info')
+    .upsert(
+      {
         ...info,
         project_id: projectId,
         project_no: projectNo,
-      } as ProjectDirectInfoInsert)
-      .select()
-      .single();
+      } as ProjectDirectInfoInsert,
+      { onConflict: 'project_no' }
+    )
+    .select()
+    .single();
 
-    if (error) {
-      throw new Error(`Failed to create project direct info: ${error.message}`);
-    }
-
-    return data;
+  if (error) {
+    throw new Error(`Failed to upsert project direct info: ${error.message}`);
   }
+
+  return data;
 }
 
 /**
@@ -302,9 +315,40 @@ export async function getProjectFiles(projectId: string): Promise<ProjectFile[]>
     throw new Error(`Failed to fetch project files: ${error.message}`);
   }
 
-  return (data || []).map(file => ({
+  const files = (data || []).map(file => ({
     ...file,
     uploaded_by_name: file.profiles?.full_name,
+  }));
+
+  const missingNameIds = Array.from(
+    new Set(
+      files
+        .filter(file => file.uploaded_by && !file.uploaded_by_name)
+        .map(file => file.uploaded_by as string)
+    )
+  );
+
+  if (missingNameIds.length === 0) {
+    return files;
+  }
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', missingNameIds);
+
+  if (profilesError) {
+    console.warn('Failed to fetch uploader profiles:', profilesError.message);
+    return files;
+  }
+
+  const profileMap = new Map(
+    (profiles || []).map(profile => [profile.id, profile.full_name || profile.email])
+  );
+
+  return files.map(file => ({
+    ...file,
+    uploaded_by_name: file.uploaded_by_name || (file.uploaded_by ? profileMap.get(file.uploaded_by) : undefined),
   }));
 }
 

@@ -167,8 +167,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
 
       {/* Toast */}
       <div
-        className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] transition-all duration-300 transform ${
-          showToast ? 'translate-y-0 opacity-100' : 'translate-y-12 opacity-0'
+        className={`fixed top-12 left-1/2 -translate-x-1/2 z-[200] transition-all duration-300 transform ${
+          showToast ? 'translate-y-0 opacity-100' : '-translate-y-6 opacity-0'
         }`}
       >
         <div className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 font-medium text-sm">

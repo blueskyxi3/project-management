@@ -182,6 +182,13 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => void; user?: { name: string; role: string; avatar: string,id: string; } }> = ({ isOpen, onClose, user }) => {
   const [uploadedFiles, setUploadedFiles] = React.useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadToast, setUploadToast] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!uploadToast) return;
+    const timer = window.setTimeout(() => setUploadToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [uploadToast]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -228,6 +235,9 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
 
     setIsUploading(true);
     try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
       const formData = new FormData();
       uploadedFiles.forEach(file => {
         formData.append('data', file.file);
@@ -243,18 +253,25 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
 
       const response = await fetch('http://192.168.206.103:5678/webhook/project-upload', {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal,
       });
+
+      window.clearTimeout(timeoutId);
 
       if (response.ok) {
         console.log('Files uploaded successfully');
         setUploadedFiles([]);
+        setUploadToast({ type: 'success', message: 'Files uploaded successfully.' });
         onClose();
       } else {
-        console.error('Upload failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Upload failed.');
       }
     } catch (error) {
       console.error('Upload error:', error);
+      const message = error instanceof Error ? error.message : 'Upload failed. Please try again.';
+      setUploadToast({ type: 'error', message });
     } finally {
       setIsUploading(false);
     }
@@ -287,6 +304,41 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
       }
     >
       <div className="flex flex-col gap-6">
+        {uploadToast && (
+          <div className="fixed left-1/2 top-12 z-[120] -translate-x-1/2">
+            <div
+              className={`min-w-[280px] max-w-[360px] rounded-xl border px-4 py-3 shadow-lg backdrop-blur-sm ${
+                uploadToast.type === 'success'
+                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50/90 border-rose-200 text-rose-800'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className={`material-symbols-outlined text-[22px] ${
+                    uploadToast.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
+                  {uploadToast.type === 'success' ? 'check_circle' : 'error'}
+                </span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">
+                    {uploadToast.type === 'success' ? 'Uploaded' : 'Upload Failed'}
+                  </div>
+                  <div className="text-xs opacity-80 mt-0.5">{uploadToast.message}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUploadToast(null)}
+                  className="text-slate-500 hover:text-slate-700 transition-colors"
+                  aria-label="Dismiss"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col gap-2">
           <label className="text-sm font-semibold text-slate-700 dark:text-slate-300" htmlFor="doc-category">Document Category</label>
           <div className="relative">
