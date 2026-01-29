@@ -192,7 +192,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <>
       {saveToast && (
         <div className="fixed left-1/2 top-12 z-50 -translate-x-1/2">
           <div
@@ -236,6 +236,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
           </div>
         </div>
       )}
+      <div className="space-y-6 pb-12">
       {/* Consistent Breadcrumbs */}
       <nav className="flex items-center text-sm font-medium text-slate-500 dark:text-slate-400">
         <button onClick={onBack} className="hover:text-primary transition-colors">Projects</button>
@@ -1001,6 +1002,7 @@ export const ProjectEditView: React.FC<ProjectEditViewProps> = ({ project, onBac
 
       <FundingModal isOpen={isFundingModalOpen} onClose={() => setIsFundingModalOpen(false)} />
       <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} user={user} />
-    </div>
+      </div>
+    </>
   );
 };

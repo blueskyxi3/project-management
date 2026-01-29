@@ -179,7 +179,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   );
 };
 
-export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => void; user?: { name: string; role: string; avatar: string,id: string; } }> = ({ isOpen, onClose, user }) => {
+export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => void; user?: { name: string; role: string; avatar: string,id: string; }, onUploaded?: () => void }> = ({ isOpen, onClose, user, onUploaded }) => {
   const [uploadedFiles, setUploadedFiles] = React.useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadToast, setUploadToast] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -263,6 +263,7 @@ export const UploadDocumentsModal: React.FC<{ isOpen: boolean; onClose: () => vo
         console.log('Files uploaded successfully');
         setUploadedFiles([]);
         setUploadToast({ type: 'success', message: 'Files uploaded successfully.' });
+        onUploaded?.();
         onClose();
       } else {
         const errorData = await response.json().catch(() => ({}));

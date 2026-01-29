@@ -399,7 +399,12 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelectProjec
         </div>
       </div>
 
-      <UploadDocumentsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} user={user} />
+      <UploadDocumentsModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUploaded={() => fetchProjects()}
+        user={user}
+      />
 
       <DeleteConfirmModal
         isOpen={isDeleteModalOpen}
